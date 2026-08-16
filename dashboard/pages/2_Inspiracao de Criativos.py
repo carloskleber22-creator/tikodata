@@ -9,11 +9,12 @@ from app.config import settings
 from app.db import SessionLocal, init_db
 from app.adlib_client import AdLibraryAPIError, SUPPORTED_COUNTRIES
 from app.services import ad_library
-from dashboard._theme import inject_base_css, kalo_row
+from dashboard._theme import inject_base_css, kalo_row, require_demo_login
 
 st.set_page_config(page_title="Inspiração de Criativos", page_icon="🎨", layout="wide")
 init_db()
 inject_base_css()
+require_demo_login()
 
 st.title("🎨 Inspiração de Criativos")
 st.caption(

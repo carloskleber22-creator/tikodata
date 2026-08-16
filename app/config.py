@@ -28,5 +28,11 @@ class Settings:
 
     database_url: str = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
+    # Portão de login opcional — só ativo se as duas vars estiverem setadas (ex: nos
+    # secrets do deploy público), pra satisfazer campos de "conta de teste" de
+    # formulários de parceiro (Shopee ISV etc.). Vazio localmente = sem login.
+    demo_login_username: str = os.getenv("DEMO_LOGIN_USERNAME", "")
+    demo_login_password: str = os.getenv("DEMO_LOGIN_PASSWORD", "")
+
 
 settings = Settings()

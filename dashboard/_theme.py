@@ -7,6 +7,8 @@ padrão do Streamlit aqui e combina com o resto do produto.
 import plotly.graph_objects as go
 import streamlit as st
 
+from app.config import settings
+
 SURFACE = "#1a1a19"
 PAGE = "#0d0d0d"
 INK_PRIMARY = "#ffffff"
@@ -143,6 +145,29 @@ def inject_base_css():
         """,
         unsafe_allow_html=True,
     )
+
+
+def require_demo_login():
+    """Portão de login opcional — sem efeito se DEMO_LOGIN_USERNAME/PASSWORD não
+    estiverem configurados (padrão local/dev). Só existe pra satisfazer campos de
+    "conta de teste" de formulários de parceiro (ex: Shopee ISV), configurado via
+    secrets só no deploy público. Chamar logo no topo de cada página."""
+    if not settings.demo_login_username or not settings.demo_login_password:
+        return
+    if st.session_state.get("demo_authenticated"):
+        return
+
+    st.title("🔒 Acesso de avaliação")
+    st.caption("Esta instância pública pede login só para avaliação de parceiros (ex: Shopee).")
+    user = st.text_input("Usuário")
+    pwd = st.text_input("Senha", type="password")
+    if st.button("Entrar", type="primary"):
+        if user == settings.demo_login_username and pwd == settings.demo_login_password:
+            st.session_state["demo_authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Usuário ou senha incorretos.")
+    st.stop()
 
 
 def sparkline_svg(values, width: int = 96, height: int = 28) -> str:

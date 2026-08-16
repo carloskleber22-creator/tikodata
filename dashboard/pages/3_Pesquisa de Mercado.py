@@ -9,11 +9,12 @@ from app.db import SessionLocal, init_db
 from app.models import SellerAccount
 from app.tt_client import TikTokShopAPIError
 from app.services import marketplace_intel
-from dashboard._theme import inject_base_css, kalo_row
+from dashboard._theme import inject_base_css, kalo_row, require_demo_login
 
 st.set_page_config(page_title="Pesquisa de Mercado", page_icon="🔎", layout="wide")
 init_db()
 inject_base_css()
+require_demo_login()
 
 st.title("🔎 Pesquisa de Mercado")
 st.caption(

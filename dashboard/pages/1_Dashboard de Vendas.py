@@ -15,6 +15,7 @@ from dashboard._theme import (
     format_compact,
     inject_base_css,
     kalo_row,
+    require_demo_login,
     stat_tile,
     style_layout,
 )
@@ -22,6 +23,7 @@ from dashboard._theme import (
 st.set_page_config(page_title="Dashboard de Vendas", page_icon="💰", layout="wide")
 init_db()
 inject_base_css()
+require_demo_login()
 
 st.title("💰 Dashboard de Vendas")
 st.caption("Receita e unidades vendidas da sua própria loja no TikTok Shop (requer conexão OAuth).")

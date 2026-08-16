@@ -10,7 +10,7 @@ from app.config import settings
 from app.db import SessionLocal, init_db
 from app.models import SellerAccount
 from app.services import sales_dashboard
-from dashboard._theme import format_compact, inject_base_css, kalo_row, stat_tile
+from dashboard._theme import format_compact, inject_base_css, kalo_row, require_demo_login, stat_tile
 from scripts.seed_demo_data import seed_demo_data
 
 PAGES = {
@@ -22,6 +22,7 @@ PAGES = {
 st.set_page_config(page_title="Tikodata", page_icon="🎵", layout="wide")
 init_db()
 inject_base_css()
+require_demo_login()
 
 st.title("🎵 Tikodata")
 st.caption("Dashboard de vendas da sua própria loja + inspiração de criativos via biblioteca oficial de anúncios do TikTok, sem raspagem.")
