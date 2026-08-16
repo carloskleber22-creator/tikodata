@@ -151,8 +151,23 @@ def require_demo_login():
     """Portão de login opcional — sem efeito se DEMO_LOGIN_USERNAME/PASSWORD não
     estiverem configurados (padrão local/dev). Só existe pra satisfazer campos de
     "conta de teste" de formulários de parceiro (ex: Shopee ISV), configurado via
-    secrets só no deploy público. Chamar logo no topo de cada página."""
-    if not settings.demo_login_username or not settings.demo_login_password:
+    secrets só no deploy público. Chamar logo no topo de cada página.
+
+    Lê tanto de variável de ambiente (settings, via .env local) quanto de
+    st.secrets (formato que o Streamlit Community Cloud realmente usa pros
+    "Secrets" configurados no painel) — sem isso, só setar em Secrets no Cloud
+    não seria suficiente porque app/config.py lê via os.getenv.
+    """
+    try:
+        secret_user = st.secrets.get("DEMO_LOGIN_USERNAME", "")
+        secret_pass = st.secrets.get("DEMO_LOGIN_PASSWORD", "")
+    except Exception:
+        # st.secrets levanta erro (não KeyError) quando não existe NENHUM
+        # secrets.toml no ambiente — caso normal do dev local, sem Streamlit Cloud.
+        secret_user, secret_pass = "", ""
+    username = settings.demo_login_username or secret_user
+    password = settings.demo_login_password or secret_pass
+    if not username or not password:
         return
     if st.session_state.get("demo_authenticated"):
         return
@@ -162,7 +177,7 @@ def require_demo_login():
     user = st.text_input("Usuário")
     pwd = st.text_input("Senha", type="password")
     if st.button("Entrar", type="primary"):
-        if user == settings.demo_login_username and pwd == settings.demo_login_password:
+        if user == username and pwd == password:
             st.session_state["demo_authenticated"] = True
             st.rerun()
         else:
