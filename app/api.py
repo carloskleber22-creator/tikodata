@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 from app.db import get_db, init_db
 from app.tt_client import tt_client, TikTokShopAPIError
 from app.adlib_client import AdLibraryAPIError
-from app.models import SellerAccount
-from app.services import sales_dashboard, ad_library, marketplace_intel
+from app.shopee_client import shopee_client, ShopeeAPIError
+from app.models import SellerAccount, ShopeeAccount
+from app.services import sales_dashboard, ad_library, marketplace_intel, shopee_sales
 
 app = FastAPI(title="Tikodata API", description="Dashboard de vendas da sua própria loja TikTok Shop")
 
@@ -65,6 +66,52 @@ def oauth_callback(code: str, db: Session = Depends(get_db)):
         "seller_name": seller.seller_name,
         "shop_name": seller.shop_name,
     }
+
+
+# --------------------------------------------------------------------------- #
+# OAuth Shopee — app separado, credenciais de app só existem após a Shopee
+# aprovar a candidatura ISV (ver README, "Status atual — Shopee").
+# --------------------------------------------------------------------------- #
+@app.get("/shopee/oauth/login")
+def shopee_oauth_login():
+    return RedirectResponse(shopee_client.get_authorization_url())
+
+
+@app.get("/shopee/oauth/callback")
+def shopee_oauth_callback(code: str, shop_id: str, db: Session = Depends(get_db)):
+    try:
+        token = shopee_client.get_access_token(code, shop_id)
+        shop_info = shopee_client.get_shop_info(token["response"]["access_token"], shop_id)
+    except ShopeeAPIError as e:
+        raise HTTPException(status_code=400, detail=f"{e.error_code}: {e.message}")
+
+    token_data = token["response"]
+    account = db.query(ShopeeAccount).filter(ShopeeAccount.shop_id == shop_id).one_or_none()
+    if account is None:
+        account = ShopeeAccount(shop_id=shop_id)
+        db.add(account)
+
+    account.shop_name = shop_info.get("response", {}).get("shop_name", "")
+    account.region = shop_info.get("response", {}).get("region", "")
+    account.access_token = token_data["access_token"]
+    account.refresh_token = token_data["refresh_token"]
+    account.access_token_expires_at = datetime.utcnow() + timedelta(seconds=token_data.get("expire_in", 14400))
+    db.commit()
+    db.refresh(account)
+
+    return {"connected": True, "shopee_account_id": account.id, "shop_name": account.shop_name}
+
+
+@app.post("/api/shopee/sync/{shopee_account_id}")
+def shopee_sync(shopee_account_id: int, db: Session = Depends(get_db)):
+    account = db.query(ShopeeAccount).filter(ShopeeAccount.id == shopee_account_id).one_or_none()
+    if account is None:
+        raise HTTPException(status_code=404, detail="Shopee account not found")
+    try:
+        saved = shopee_sales.sync_orders(db, account)
+    except ShopeeAPIError as e:
+        raise HTTPException(status_code=400, detail=f"{e.error_code}: {e.message}")
+    return {"items_saved": saved}
 
 
 @app.get("/api/sellers")

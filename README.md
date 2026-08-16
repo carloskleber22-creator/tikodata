@@ -23,6 +23,7 @@ serviços > Tikodata), clique em "Publicar" e teste `https://lvh.me:8000/oauth/l
 | Dashboard de Vendas | Receita e unidades vendidas da própria loja (pedidos reais via OAuth) | Implementado |
 | Inspiração de Criativos | Busca por categoria de produto na Ad Library oficial do TikTok — peça criativa, período e alcance, ordenado do maior alcance pro menor | Implementado — **só cobre Europa** |
 | Pesquisa de Mercado | Criadores e produtos de **qualquer loja** via Affiliate Seller API — GMV, seguidores, unidades vendidas, comissão | Implementado — **nunca testado com OAuth real, bloqueado esperando a mesma revisão do TikTok Shop** |
+| Vendas Shopee | Receita e unidades vendidas da própria loja Shopee (pedidos reais via OAuth) | Implementado — **bloqueado esperando aprovação da candidatura ISV na Shopee, sem `partner_id`/`partner_key` reais ainda** |
 
 ## Front-end
 
@@ -70,10 +71,12 @@ tikodata/
     models.py            # SellerAccount, Order, CompetitorAd, MarketplaceCreator, MarketplaceProduct
     tt_client.py          # wrapper da API do TikTok Shop (OAuth2 + assinatura HMAC + endpoints)
     adlib_client.py        # wrapper da Commercial Content API (client_credentials, sem HMAC)
+    shopee_client.py        # wrapper da Shopee Open Platform API (OAuth2 + assinatura HMAC)
     services/
-      sales_dashboard.py    # sync de pedidos + resumo de vendas
+      sales_dashboard.py    # sync de pedidos + resumo de vendas (TikTok Shop)
       ad_library.py          # busca/track de anúncios de concorrentes (só Europa)
       marketplace_intel.py    # busca/track de criadores e produtos via Affiliate Seller API
+      shopee_sales.py         # sync de pedidos + resumo de vendas (Shopee) — espelha sales_dashboard.py
     api.py                 # FastAPI: rotas OAuth + REST
   dashboard/
     _theme.py                # paleta validada + componentes (stat tile, sparkline, rank row, kalo_row)
@@ -82,6 +85,7 @@ tikodata/
       1_Dashboard de Vendas.py
       2_Inspiracao de Criativos.py
       3_Pesquisa de Mercado.py
+      4_Vendas Shopee.py
 ```
 
 Mesma stack do projeto irmão [Mercadata](../mercadata) (FastAPI + SQLAlchemy + SQLite +
@@ -162,6 +166,33 @@ Streamlit) — Python porque esta máquina não tem Node.js instalado.
   problema de código — **tentar de novo depois de algumas horas**. Se persistir, abrir chamado de
   suporte no portal citando um dos `log_id` retornados.
 
+### Shopee Open Platform — descobertas
+
+- **Candidatura escolhida: Third-party Partner Platform (ISV)**, não "Shopee Seller" — porque a
+  Shopee Brasil exige um HTTPS ao vivo + conta de teste ("Live Test Username/Password") para
+  candidaturas de parceiro de software, o que só fez sentido depois de publicar o Tikodata no
+  Streamlit Community Cloud. Enviada em 2026-08-16 com dados reais da empresa (CNPJ), status
+  "Profile Under Review".
+- **Assinatura é mais simples que a do TikTok Shop**: string-base é só
+  `partner_id + api_path + timestamp [+ access_token + shop_id]` (sem ordenar/concatenar query
+  params, ao contrário do TikTok), assinada em HMAC-SHA256 com `partner_key`, saída em hex —
+  confirmado na doc oficial "Signature calculation" com exemplos numéricos reais. Implementado em
+  `shopee_client.py::_sign`.
+- **Três tipos de API com parâmetros comuns diferentes**: Shop API, Merchant API, Public API.
+  O fluxo de auth usa a Public API (`/api/v2/auth/token/get`); os dados de pedido usam a Shop API
+  (exige `access_token` + `shop_id` nos parâmetros comuns, além de `partner_id`/`timestamp`/`sign`).
+- **Domínios específicos do Brasil**: API em `https://openplatform.shopee.com.br`, autorização em
+  `https://open.shopee.com.br/auth` — diferente do domínio genérico usado por outros mercados.
+- **`access_token` dura só 4h**, `refresh_token` tem validade maior — implementado
+  `refresh_access_token` em `shopee_client.py` mas ainda não testado contra credencial real.
+- **Formato exato de `get_order_list`/`get_order_detail` não confirmado**: a página de detalhe do
+  endpoint na doc oficial não carregou o conteúdo específico em várias tentativas de navegação.
+  `shopee_client.py` e `shopee_sales.py::sync_orders` foram escritos seguindo as convenções bem
+  documentadas da Shopee API v2 (mesmo padrão de outros endpoints v2 confirmados), tratando
+  `item_list` de forma defensiva (linha sintética se vier vazio/formato inesperado) — mesmo
+  approach usado para o `line_items` incerto do TikTok Shop. **Ajustar contra resposta real assim
+  que a candidatura ISV for aprovada e um app puder ser criado no Shopee Open Platform Console.**
+
 ## Setup
 
 ```bash
@@ -213,6 +244,22 @@ Independente do setup do TikTok Shop acima — é outro app, outro portal.
 4. Com a API rodando (passo 5 acima), acesse a página "Inspiração de Criativos" no dashboard e
    busque por um termo — não precisa de login OAuth, é autenticação de app (`client_credentials`).
 
+### Setup — Vendas Shopee
+
+Independente do setup do TikTok Shop acima — outro portal, outro par de credenciais.
+
+1. ~~Candidate-se como Third-party Partner Platform (ISV) em
+   [open.shopee.com](https://open.shopee.com)~~ — feito em 2026-08-16, status "Profile Under
+   Review". **Falta:** aprovação da Shopee.
+2. Quando aprovado, crie um "App" no Shopee Open Platform Console e coloque `SHOPEE_PARTNER_ID`/
+   `SHOPEE_PARTNER_KEY` no `.env`.
+3. Com a API rodando (passo 5 do setup do TikTok Shop acima), acesse
+   `https://lvh.me:8000/shopee/oauth/login`, autorize com sua conta de vendedor Shopee.
+4. Volte para o dashboard — a loja Shopee aparece na Home e na página "Vendas Shopee". Use o botão
+   "Sincronizar pedidos" na página para puxar os pedidos reais.
+5. Enquanto isso não sai, use "🧪 Popular com dados de exemplo" na Home ou na própria página
+   "Vendas Shopee" pra ver o layout com dados fake.
+
 ## Limitações conhecidas / próximos passos
 
 - **Bloqueado por revisão do TikTok** — ver "Status atual" no topo. O fluxo OAuth foi construído
@@ -232,3 +279,8 @@ Independente do setup do TikTok Shop acima — é outro app, outro portal.
 - Sem testes automatizados — só verificação manual (servidor sobe limpo, páginas renderizam,
   estado vazio tratado sem erro).
 - SQLite é suficiente para uso pessoal; migre para Postgres antes de qualquer uso multiusuário.
+- **Vendas Shopee: candidatura ISV em avaliação, sem `partner_id`/`partner_key` reais** — ver
+  "Shopee Open Platform — descobertas" acima. Código completo (`shopee_client.py`,
+  `shopee_sales.py`, rotas OAuth, página do dashboard) escrito a partir da documentação oficial,
+  testado só com dados de exemplo (`seed_shopee_demo_data`); formato de `get_order_list`/
+  `get_order_detail` não confirmado contra resposta real.

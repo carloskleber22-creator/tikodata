@@ -26,6 +26,16 @@ class Settings:
     adlib_client_key: str = os.getenv("ADLIB_CLIENT_KEY", "")
     adlib_client_secret: str = os.getenv("ADLIB_CLIENT_SECRET", "")
 
+    # App na Shopee Open Platform (open.shopee.com), tipo "Third-party Partner
+    # Platform" — candidatura em avaliação (ver README). partner_id/partner_key
+    # só existem depois que a Shopee cria o App dentro do perfil aprovado.
+    shopee_partner_id: str = os.getenv("SHOPEE_PARTNER_ID", "")
+    shopee_partner_key: str = os.getenv("SHOPEE_PARTNER_KEY", "")
+    shopee_redirect_uri: str = os.getenv("SHOPEE_REDIRECT_URI", "https://lvh.me:8000/shopee/oauth/callback")
+    # BR usa domínio próprio, diferente do resto do mundo — ver Descobertas no README.
+    shopee_api_host: str = os.getenv("SHOPEE_API_HOST", "https://openplatform.shopee.com.br")
+    shopee_auth_host: str = os.getenv("SHOPEE_AUTH_HOST", "https://open.shopee.com.br")
+
     database_url: str = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
     # Portão de login opcional — só ativo se as duas vars estiverem setadas (ex: nos

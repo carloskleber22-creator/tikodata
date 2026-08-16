@@ -72,6 +72,47 @@ class CompetitorAd(Base):
     captured_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class ShopeeAccount(Base):
+    """Loja Shopee conectada via OAuth — modelo separado do SellerAccount (TikTok
+    Shop) porque os dois têm conceitos diferentes (shop_id da Shopee é numérico,
+    não tem open_id/shop_cipher). Mesmo padrão de manter clientes/modelos por
+    plataforma sem forçar abstração prematura entre eles."""
+
+    __tablename__ = "shopee_accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shop_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    shop_name: Mapped[str] = mapped_column(String(120), default="")
+    region: Mapped[str] = mapped_column(String(10), default="")
+    access_token: Mapped[str] = mapped_column(String(255))
+    refresh_token: Mapped[str] = mapped_column(String(255))
+    access_token_expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    orders: Mapped[list["ShopeeOrder"]] = relationship(back_populates="account")
+
+
+class ShopeeOrder(Base):
+    """Um pedido da Shopee (get_order_list + get_order_detail). Estrutura mais
+    simples que o Order do TikTok Shop porque ainda não temos credencial real
+    pra confirmar o formato exato de item_list — ajustar quando testar de
+    verdade, mesma ressalva que já vale pro line_items do TikTok Shop."""
+
+    __tablename__ = "shopee_orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shopee_account_id: Mapped[int] = mapped_column(ForeignKey("shopee_accounts.id"), index=True)
+    order_sn: Mapped[str] = mapped_column(String(32), index=True)
+    product_name: Mapped[str] = mapped_column(String(255), default="")
+    quantity: Mapped[int] = mapped_column(Integer, default=0)
+    total_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    currency: Mapped[str] = mapped_column(String(10), default="")
+    order_status: Mapped[str] = mapped_column(String(40), default="")
+    create_time: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+    account: Mapped["ShopeeAccount"] = relationship(back_populates="orders")
+
+
 class MarketplaceCreator(Base):
     """
     Um criador encontrado via TikTok Shop Affiliate Seller API (Seller Search

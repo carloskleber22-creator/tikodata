@@ -8,15 +8,16 @@ import streamlit as st
 
 from app.config import settings
 from app.db import SessionLocal, init_db
-from app.models import SellerAccount
-from app.services import sales_dashboard
+from app.models import SellerAccount, ShopeeAccount
+from app.services import sales_dashboard, shopee_sales
 from dashboard._theme import format_compact, inject_base_css, kalo_row, require_demo_login, stat_tile
 from scripts.seed_demo_data import seed_demo_data
 
 PAGES = {
-    "pages/1_Dashboard de Vendas.py": ("💰", "Dashboard de Vendas", "Receita e unidades da sua loja"),
+    "pages/1_Dashboard de Vendas.py": ("💰", "Dashboard de Vendas (TikTok)", "Receita e unidades da sua loja"),
     "pages/2_Inspiracao de Criativos.py": ("🎨", "Inspiração de Criativos", "Criativos em alta (só Europa)"),
     "pages/3_Pesquisa de Mercado.py": ("🔎", "Pesquisa de Mercado", "Criadores e produtos de qualquer loja"),
+    "pages/4_Vendas Shopee.py": ("🛍️", "Vendas Shopee", "Receita e unidades da sua loja"),
 }
 
 st.set_page_config(page_title="Tikodata", page_icon="🎵", layout="wide")
@@ -41,8 +42,11 @@ with st.expander("Por que os dados são limitados (sem raspagem)"):
 
 with SessionLocal() as db:
     sellers = db.query(SellerAccount).all()
+    shopee_accounts = db.query(ShopeeAccount).all()
 has_real_seller = any(s.open_id != "demo-0000000000" for s in sellers)
+has_real_shopee = any(a.shop_id != "000000000" for a in shopee_accounts)
 adlib_configured = bool(settings.adlib_client_key and settings.adlib_client_secret)
+shopee_configured = bool(settings.shopee_partner_id and settings.shopee_partner_key)
 
 st.subheader("Status")
 status_lines = [
@@ -52,6 +56,9 @@ status_lines = [
      if adlib_configured else "⏳ Configure `ADLIB_CLIENT_KEY`/`ADLIB_CLIENT_SECRET` no `.env`"),
     "✅ Loja real conectada" if has_real_seller
     else "⏳ Aguardando a mesma loja real conectar (mesmo bloqueio do Dashboard de Vendas)",
+    ("✅ Loja real conectada" if has_real_shopee
+     else "⏳ Aguardando aprovação da candidatura ISV na Shopee" if not shopee_configured
+     else "⏳ Aguardando loja real conectar"),
 ]
 for (icon, label, _), status in zip(PAGES.values(), status_lines):
     st.markdown(f"{icon} **{label}** — {status}")
@@ -66,25 +73,45 @@ for col, (page_path, (icon, label, desc)) in zip(cols, PAGES.items()):
 
 st.divider()
 
-if not sellers:
+total_accounts = len(sellers) + len(shopee_accounts)
+
+if not total_accounts:
     st.info("Nenhuma loja conectada ainda.")
     if st.button("🧪 Popular com dados de exemplo"):
         st.success(seed_demo_data())
+        st.success(seed_shopee_demo_data())
         st.rerun()
 else:
     now = datetime.utcnow()
-    store_summaries = []
+    store_rows = []
     with SessionLocal() as db:
         for s in sellers:
             summary = sales_dashboard.get_sales_summary(db, s.id, now - timedelta(days=30), now)
-            store_summaries.append((s, summary))
+            store_rows.append({
+                "icon": "🧪" if s.open_id == "demo-0000000000" else "🎵",
+                "name": s.shop_name or s.seller_name,
+                "region": s.seller_base_region or "—",
+                "revenue": summary["revenue"],
+                "units": summary["units"],
+                "trend": summary["by_day"]["total_amount"].tolist() if not summary["by_day"].empty else [],
+            })
+        for a in shopee_accounts:
+            summary = shopee_sales.get_sales_summary(db, a.id, now - timedelta(days=30), now)
+            store_rows.append({
+                "icon": "🧪" if a.shop_id == "000000000" else "🛍️",
+                "name": a.shop_name,
+                "region": a.region or "—",
+                "revenue": summary["revenue"],
+                "units": summary["units"],
+                "trend": summary["by_day"]["total_amount"].tolist() if not summary["by_day"].empty else [],
+            })
 
-    total_revenue = sum(summary["revenue"] for _, summary in store_summaries)
-    total_units = sum(summary["units"] for _, summary in store_summaries)
+    total_revenue = sum(r["revenue"] for r in store_rows)
+    total_units = sum(r["units"] for r in store_rows)
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown(stat_tile("Lojas conectadas", str(len(sellers)), show_delta=False), unsafe_allow_html=True)
+        st.markdown(stat_tile("Lojas conectadas", str(total_accounts), show_delta=False), unsafe_allow_html=True)
     with col2:
         st.markdown(stat_tile("Receita últimos 30 dias (todas as lojas)", f"R$ {format_compact(total_revenue)}", show_delta=False), unsafe_allow_html=True)
     with col3:
@@ -94,16 +121,10 @@ else:
     st.subheader("Lojas conectadas")
     rows_html = "".join(
         kalo_row(
-            "🧪" if s.open_id == "demo-0000000000" else "🛍️",
-            "",
-            s.shop_name or s.seller_name,
-            s.seller_base_region or "—",
-            "Receita",
-            f'R$ {format_compact(summary["revenue"])}',
-            summary["by_day"]["total_amount"].tolist() if not summary["by_day"].empty else [],
-            [],
+            r["icon"], "", r["name"], r["region"], "Receita",
+            f'R$ {format_compact(r["revenue"])}', r["trend"], [],
         )
-        for s, summary in store_summaries
+        for r in store_rows
     )
     st.markdown(f'<div class="kalo-table">{rows_html}</div>', unsafe_allow_html=True)
 
