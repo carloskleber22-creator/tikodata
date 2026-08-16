@@ -11,6 +11,7 @@ from app.db import SessionLocal, init_db
 from app.models import SellerAccount
 from app.services import sales_dashboard
 from dashboard._theme import format_compact, inject_base_css, kalo_row, stat_tile
+from scripts.seed_demo_data import seed_demo_data
 
 PAGES = {
     "pages/1_Dashboard de Vendas.py": ("💰", "Dashboard de Vendas", "Receita e unidades da sua loja"),
@@ -66,6 +67,9 @@ st.divider()
 
 if not sellers:
     st.info("Nenhuma loja conectada ainda.")
+    if st.button("🧪 Popular com dados de exemplo"):
+        st.success(seed_demo_data())
+        st.rerun()
 else:
     now = datetime.utcnow()
     store_summaries = []
@@ -113,4 +117,6 @@ with col1:
     )
 with col2:
     st.markdown("**Testar com dados de exemplo**")
-    st.code("python3 scripts/seed_demo_data.py", language="bash")
+    if st.button("🧪 Popular com dados de exemplo", key="seed_bottom"):
+        st.success(seed_demo_data())
+        st.rerun()

@@ -76,17 +76,15 @@ def build_orders(seller_id: int, days: int, seed: int):
     return orders
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--reset", action="store_true", help="Apaga dados demo existentes antes de recriar.")
-    parser.add_argument("--days", type=int, default=90, help="Quantos dias de histórico gerar (padrão: 90).")
-    args = parser.parse_args()
-
+def seed_demo_data(days: int = 90, reset: bool = False) -> str:
+    """Cria (ou reaproveita) a conta demo com pedidos de exemplo. Usada tanto pelo
+    CLI (`python3 scripts/seed_demo_data.py`) quanto pelo botão de prévia da Home
+    no deploy público, onde não há acesso a terminal pra rodar o script."""
     init_db()
     with SessionLocal() as db:
         seller = db.query(SellerAccount).filter(SellerAccount.open_id == DEMO_OPEN_ID).one_or_none()
 
-        if seller and args.reset:
+        if seller and reset:
             db.query(Order).filter(Order.seller_account_id == seller.id).delete()
             db.delete(seller)
             db.commit()
@@ -111,13 +109,20 @@ def main():
         else:
             existing_orders = db.query(Order).filter(Order.seller_account_id == seller.id).count()
             if existing_orders:
-                print(f"Conta demo já tem {existing_orders} pedidos. Use --reset para recriar.")
-                return
+                return f"Conta demo já tem {existing_orders} pedidos. Use --reset para recriar."
 
-        orders = build_orders(seller.id, args.days, seed=42)
+        orders = build_orders(seller.id, days, seed=42)
         db.add_all(orders)
         db.commit()
-        print(f"Conta demo '{seller.seller_name}' (id={seller.id}) com {len(orders)} pedidos de exemplo criada.")
+        return f"Conta demo '{seller.seller_name}' (id={seller.id}) com {len(orders)} pedidos de exemplo criada."
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--reset", action="store_true", help="Apaga dados demo existentes antes de recriar.")
+    parser.add_argument("--days", type=int, default=90, help="Quantos dias de histórico gerar (padrão: 90).")
+    args = parser.parse_args()
+    print(seed_demo_data(days=args.days, reset=args.reset))
 
 
 if __name__ == "__main__":
