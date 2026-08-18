@@ -36,6 +36,32 @@ class Settings:
     shopee_api_host: str = os.getenv("SHOPEE_API_HOST", "https://openplatform.shopee.com.br")
     shopee_auth_host: str = os.getenv("SHOPEE_AUTH_HOST", "https://open.shopee.com.br")
 
+    # ----------------------------------------------------------------- #
+    # AI OS (app/aios) — o supervisor roteia entre estes provedores. Nenhum é
+    # obrigatório: sem chave nenhuma, ele cai no agente local de regras.
+    # ----------------------------------------------------------------- #
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    openai_model: str = os.getenv("OPENAI_MODEL", "")
+    openai_base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "")
+
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "")
+    gemini_base_url: str = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+
+    # Servidores MCP remotos (JSON): [{"nome": "docs", "url": "https://.../mcp"}]
+    aios_mcp_servers: str = os.getenv("AIOS_MCP_SERVERS", "")
+    # Domínios liberados para a ferramenta http_get, separados por vírgula.
+    # Vazio = ferramenta desligada (padrão), pra não virar proxy aberto.
+    aios_http_allowlist: str = os.getenv("AIOS_HTTP_ALLOWLIST", "")
+    # Tetos do laço do supervisor — segurança contra loop infinito de ferramenta.
+    aios_max_steps: int = int(os.getenv("AIOS_MAX_STEPS", "6"))
+    aios_max_tokens: int = int(os.getenv("AIOS_MAX_TOKENS", "4096"))
+    aios_history_limit: int = int(os.getenv("AIOS_HISTORY_LIMIT", "40"))
+    aios_request_timeout: float = float(os.getenv("AIOS_REQUEST_TIMEOUT", "120"))
+
     database_url: str = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
     # Portão de login opcional — só ativo se as duas vars estiverem setadas (ex: nos

@@ -24,6 +24,7 @@ serviços > Tikodata), clique em "Publicar" e teste `https://lvh.me:8000/oauth/l
 | Inspiração de Criativos | Busca por categoria de produto na Ad Library oficial do TikTok — peça criativa, período e alcance, ordenado do maior alcance pro menor | Implementado — **só cobre Europa** |
 | Pesquisa de Mercado | Criadores e produtos de **qualquer loja** via Affiliate Seller API — GMV, seguidores, unidades vendidas, comissão | Implementado — **nunca testado com OAuth real, bloqueado esperando a mesma revisão do TikTok Shop** |
 | Vendas Shopee | Receita e unidades vendidas da própria loja Shopee (pedidos reais via OAuth) | Implementado — **bloqueado esperando aprovação da candidatura ISV na Shopee, sem `partner_id`/`partner_key` reais ainda** |
+| Assistente IA (AI OS) | Pergunta em linguagem natural sobre a operação; supervisor roteia entre GPT/Claude/Gemini/agente local, roda ferramentas sobre o banco e audita cada passo | Implementado — **testado com provedor falso e com o agente local; nenhuma chave de modelo configurada ainda** |
 
 ## Front-end
 
@@ -68,7 +69,8 @@ tikodata/
   app/
     config.py          # variáveis de ambiente
     db.py               # engine/sessão SQLAlchemy (SQLite por padrão)
-    models.py            # SellerAccount, Order, CompetitorAd, MarketplaceCreator, MarketplaceProduct
+    models.py            # SellerAccount, Order, CompetitorAd, MarketplaceCreator, MarketplaceProduct,
+                         #   ShopeeAccount/ShopeeOrder e as tabelas do AI OS (sessões, mensagens, memória, auditoria)
     tt_client.py          # wrapper da API do TikTok Shop (OAuth2 + assinatura HMAC + endpoints)
     adlib_client.py        # wrapper da Commercial Content API (client_credentials, sem HMAC)
     shopee_client.py        # wrapper da Shopee Open Platform API (OAuth2 + assinatura HMAC)
@@ -77,7 +79,15 @@ tikodata/
       ad_library.py          # busca/track de anúncios de concorrentes (só Europa)
       marketplace_intel.py    # busca/track de criadores e produtos via Affiliate Seller API
       shopee_sales.py         # sync de pedidos + resumo de vendas (Shopee) — espelha sales_dashboard.py
-    api.py                 # FastAPI: rotas OAuth + REST
+    aios/                  # AI OS: supervisor + provedores + ferramentas + memória + auditoria
+      schemas.py            # formato de mensagem/ferramenta neutro entre provedores
+      supervisor.py          # roteamento, laço de ferramentas, fallback entre modelos
+      memory.py               # curto prazo (mensagens da sessão) + longo prazo (fatos)
+      audit.py                 # um evento por passo: roteamento, modelo, ferramenta, erro
+      router.py                 # FastAPI: /api/ai/*
+      providers/                 # gpt (OpenAI), claude (SDK anthropic), gemini, local (regras)
+      tools/                      # registro + ferramentas embutidas + cliente MCP por HTTP
+    api.py                 # FastAPI: rotas OAuth + REST + AI OS
   dashboard/
     _theme.py                # paleta validada + componentes (stat tile, sparkline, rank row, kalo_row)
     Home.py                   # Streamlit — landing page
@@ -86,10 +96,91 @@ tikodata/
       2_Inspiracao de Criativos.py
       3_Pesquisa de Mercado.py
       4_Vendas Shopee.py
+      5_Assistente IA.py
+  tests/
+    test_aios.py               # testes do AI OS (rodam sem nenhuma credencial)
 ```
 
 Mesma stack do projeto irmão [Mercadata](../mercadata) (FastAPI + SQLAlchemy + SQLite +
 Streamlit) — Python porque esta máquina não tem Node.js instalado.
+
+## AI OS — camada de orquestração de IA
+
+Em cima do dashboard existe uma camada de agente que responde perguntas sobre a operação
+("quanto vendi nos últimos 30 dias?", "quais criadores eu já pesquisei?") consultando o banco
+do próprio Tikodata em vez de adivinhar. O fluxo é:
+
+```
+Usuário / Aplicação        Streamlit (🤖 Assistente IA) ou qualquer cliente HTTP
+        ↓
+     AI OS API             app/aios/router.py  →  POST /api/ai/chat
+        ↓
+  Supervisor Agent         app/aios/supervisor.py — roteia, chama ferramentas, faz fallback
+        ↓
+ ┌──────┼─────────┬─────────┐
+ ↓      ↓         ↓         ↓
+GPT   Claude    Gemini   Agentes locais        app/aios/providers/
+ ↓      ↓         ↓
+Tools / MCP / APIs / Arquivos                  app/aios/tools/
+        ↓
+ Memória + Banco + Auditoria                   app/aios/memory.py, audit.py, mesmo SQLite
+```
+
+**Roteamento.** O supervisor escolhe o modelo nesta ordem: provedor pedido na requisição →
+provedor fixado na sessão → heurística por tipo de tarefa (código/análise → Claude, texto muito
+longo → Gemini, consulta objetiva → GPT) → primeiro configurado. Só entra na fila quem tem
+credencial de verdade, e a decisão vai para a auditoria com o motivo em texto. Se o escolhido
+falhar (chave inválida, rede, 5xx), ele cai para o próximo da fila e registra a queda em vez de
+devolver erro ao usuário.
+
+**Agentes locais.** O quarto ramo não é um LLM: é um agente determinístico que casa
+palavra-chave com ferramenta, roda e devolve o resultado. É o que faz o AI OS funcionar **sem
+nenhuma API key** — que é exatamente o estado atual deste projeto — e serve de rota barata para
+perguntas que são só uma consulta ao banco. Ele não finge entender o que não entende: sem regra
+que case, ele diz isso.
+
+**Ferramentas.** Um registro único expõe quatro famílias ao modelo, todas com JSON Schema:
+dados da operação (`vendas_resumo`, `shopee_resumo`, `mercado_criadores`, `mercado_produtos`,
+`adlib_anuncios`, `listar_lojas`), memória (`memoria_gravar`, `memoria_buscar`), arquivos do
+projeto (`arquivo_ler`, `arquivos_listar` — caminho resolvido e conferido contra a raiz) e
+APIs externas (`http_get`, restrito a uma allowlist de domínios, **desligado por padrão**).
+Servidores MCP remotos declarados em `AIOS_MCP_SERVERS` entram no mesmo registro como
+`mcp__<servidor>__<ferramenta>` — para o modelo são indistinguíveis das locais. Sessões podem
+rodar em modo somente leitura, e aí o supervisor recusa qualquer ferramenta marcada como
+escrita.
+
+**Memória e auditoria.** Mensagens ficam em `ai_messages` (curto prazo, as N últimas voltam ao
+modelo a cada turno) e fatos em `ai_memory_facts` (longo prazo, entram no prompt de sistema).
+Cada passo — roteamento, chamada de modelo, chamada de ferramenta, erro — vira uma linha em
+`ai_audit_events` com tokens, latência e custo estimado, porque senão não há como investigar
+depois por que o AI OS respondeu o que respondeu.
+
+### Endpoints
+
+| Rota | O que faz |
+|---|---|
+| `POST /api/ai/chat` | Pergunta ao supervisor. Aceita `provedor`, `modelo`, `session_id`, `permitir_escrita` |
+| `GET /api/ai/providers` | Quais provedores existem e quais estão configurados |
+| `GET /api/ai/tools` | Ferramentas registradas (incluindo as vindas de MCP) |
+| `GET /api/ai/sessions` · `/sessions/{id}/messages` | Conversas e histórico |
+| `GET /api/ai/audit` | Trilha de auditoria + totais de tokens/custo |
+| `GET` · `POST /api/ai/memory` | Ler e gravar fatos de longo prazo |
+
+```bash
+curl -sk https://lvh.me:8000/api/ai/chat -H 'Content-Type: application/json' \
+  -d '{"mensagem": "quanto vendi nos últimos 30 dias?"}'
+```
+
+### Configuração e testes
+
+Nenhuma chave é obrigatória (ver `.env.example`): sem `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` e
+`GEMINI_API_KEY`, o supervisor usa o agente local. Os testes cobrem roteamento, laço de
+ferramentas, fallback entre provedores, modo somente leitura, teto de passos, memória e
+auditoria — com um provedor falso no lugar do LLM, então rodam offline e sem credencial:
+
+```bash
+python -m pytest tests/test_aios.py
+```
 
 ## Descobertas importantes (documentação oficial, verificada em 2026-08-16)
 
@@ -276,8 +367,16 @@ Independente do setup do TikTok Shop acima — outro portal, outro par de creden
   exemplo completos pros dois endpoints), mas depende do mesmo `shop_cipher`/`access_token` de
   loja conectada que está bloqueado pela revisão de segurança/privacidade do TikTok Shop (ver
   "Status atual"). Testar assim que a revisão liberar e o OAuth funcionar de ponta a ponta.
-- Sem testes automatizados — só verificação manual (servidor sobe limpo, páginas renderizam,
-  estado vazio tratado sem erro).
+- Testes automatizados existem só para o AI OS (`tests/test_aios.py`, 15 casos rodando offline
+  com provedor falso). O resto do projeto continua com verificação manual (servidor sobe limpo,
+  páginas renderizam, estado vazio tratado sem erro).
+- **AI OS: nenhum provedor real exercitado ainda** — as traduções de formato para GPT, Claude e
+  Gemini foram escritas a partir da documentação de cada API e testadas com provedor falso, mas
+  nenhuma chave está configurada, então nenhuma delas foi confirmada contra a API de verdade.
+  Confirmar assim que houver uma chave, começando por uma pergunta que force o laço de
+  ferramentas (ex.: "quanto vendi nos últimos 30 dias?").
+- **MCP só por HTTP** — servidores MCP locais (stdio) exigiriam gerenciar subprocesso e não
+  estão cobertos.
 - SQLite é suficiente para uso pessoal; migre para Postgres antes de qualquer uso multiusuário.
 - **Vendas Shopee: candidatura ISV em avaliação, sem `partner_id`/`partner_key` reais** — ver
   "Shopee Open Platform — descobertas" acima. Código completo (`shopee_client.py`,

@@ -8,3 +8,5 @@ streamlit==1.50.0
 plotly==6.9.0
 httpx
 urllib3<2
+anthropic==0.122.0
+pytest==9.1.1

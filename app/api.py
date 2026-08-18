@@ -10,8 +10,12 @@ from app.adlib_client import AdLibraryAPIError
 from app.shopee_client import shopee_client, ShopeeAPIError
 from app.models import SellerAccount, ShopeeAccount
 from app.services import sales_dashboard, ad_library, marketplace_intel, shopee_sales
+from app.aios.router import router as aios_router
 
-app = FastAPI(title="Tikodata API", description="Dashboard de vendas da sua própria loja TikTok Shop")
+app = FastAPI(title="Tikodata API", description="Dashboard de vendas da sua própria loja TikTok Shop + AI OS")
+
+# Camada de orquestração de IA (supervisor + provedores + ferramentas) — ver app/aios/.
+app.include_router(aios_router)
 
 
 @app.on_event("startup")

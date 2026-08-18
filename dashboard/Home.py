@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import streamlit as st
 
+from app.aios.providers import registry as ai_registry
 from app.config import settings
 from app.db import SessionLocal, init_db
 from app.models import SellerAccount, ShopeeAccount
@@ -18,6 +19,7 @@ PAGES = {
     "pages/2_Inspiracao de Criativos.py": ("🎨", "Inspiração de Criativos", "Criativos em alta (só Europa)"),
     "pages/3_Pesquisa de Mercado.py": ("🔎", "Pesquisa de Mercado", "Criadores e produtos de qualquer loja"),
     "pages/4_Vendas Shopee.py": ("🛍️", "Vendas Shopee", "Receita e unidades da sua loja"),
+    "pages/5_Assistente IA.py": ("🤖", "Assistente IA", "Pergunte sobre a operação em linguagem natural"),
 }
 
 st.set_page_config(page_title="Tikodata", page_icon="🎵", layout="wide")
@@ -43,6 +45,7 @@ with st.expander("Por que os dados são limitados (sem raspagem)"):
 with SessionLocal() as db:
     sellers = db.query(SellerAccount).all()
     shopee_accounts = db.query(ShopeeAccount).all()
+ai_providers = ai_registry.describe()
 has_real_seller = any(s.open_id != "demo-0000000000" for s in sellers)
 has_real_shopee = any(a.shop_id != "000000000" for a in shopee_accounts)
 adlib_configured = bool(settings.adlib_client_key and settings.adlib_client_secret)
@@ -59,6 +62,9 @@ status_lines = [
     ("✅ Loja real conectada" if has_real_shopee
      else "⏳ Aguardando aprovação da candidatura ISV na Shopee" if not shopee_configured
      else "⏳ Aguardando loja real conectar"),
+    ("✅ " + ", ".join(p["label"] for p in ai_providers if p["configured"])
+     if any(p["configured"] and p["name"] != "local" for p in ai_providers)
+     else "⏳ Sem chave de modelo — respondendo pelo agente local de regras"),
 ]
 for (icon, label, _), status in zip(PAGES.values(), status_lines):
     st.markdown(f"{icon} **{label}** — {status}")

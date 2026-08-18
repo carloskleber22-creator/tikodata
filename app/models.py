@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Integer, Float, Boolean, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -162,3 +162,91 @@ class MarketplaceProduct(Base):
     commission_rate: Mapped[int] = mapped_column(Integer, default=0)
     category_name: Mapped[str] = mapped_column(String(120), default="")
     captured_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+# --------------------------------------------------------------------------- #
+# AI OS — camada de orquestração (Supervisor Agent). Ver app/aios/.
+# Quatro tabelas cobrem os três blocos de baixo do desenho: Memória (sessão +
+# mensagens + fatos de longo prazo), Banco (é o mesmo SQLite do resto do app) e
+# Auditoria (um evento por passo do supervisor: roteamento, chamada de modelo,
+# chamada de ferramenta, erro).
+# --------------------------------------------------------------------------- #
+class AISession(Base):
+    """Uma conversa com o supervisor. Guarda o provedor fixado (se o usuário
+    escolheu um) e o rótulo de quem está falando (usuário/app)."""
+
+    __tablename__ = "ai_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    actor: Mapped[str] = mapped_column(String(80), default="usuario")
+    pinned_provider: Mapped[str] = mapped_column(String(30), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    messages: Mapped[list["AIMessage"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", order_by="AIMessage.id"
+    )
+
+
+class AIMessage(Base):
+    """Uma mensagem no formato interno neutro (ver app/aios/schemas.py) —
+    guardamos só o que é replayável entre provedores: role, texto e, quando é
+    uma chamada de ferramenta, o JSON dela. Blocos específicos de um provedor
+    (thinking do Claude, por exemplo) não são persistidos de propósito: eles não
+    podem ser reenviados para outro modelo."""
+
+    __tablename__ = "ai_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("ai_sessions.id"), index=True)
+    role: Mapped[str] = mapped_column(String(20))  # user | assistant | tool
+    content: Mapped[str] = mapped_column(Text, default="")
+    tool_calls_json: Mapped[str] = mapped_column(Text, default="")  # assistant que pediu ferramentas
+    tool_call_id: Mapped[str] = mapped_column(String(80), default="")  # resposta de ferramenta
+    tool_name: Mapped[str] = mapped_column(String(120), default="")
+    provider: Mapped[str] = mapped_column(String(30), default="")
+    model: Mapped[str] = mapped_column(String(80), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    session: Mapped["AISession"] = relationship(back_populates="messages")
+
+
+class AIMemoryFact(Base):
+    """Memória de longo prazo — fatos que sobrevivem à sessão (preferências do
+    usuário, contexto da loja, decisões). `scope` vazio = global; senão é o id
+    da sessão em texto, pra memória por conversa."""
+
+    __tablename__ = "ai_memory_facts"
+    __table_args__ = (UniqueConstraint("scope", "key", name="uq_ai_memory_fact"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(60), default="", index=True)
+    key: Mapped[str] = mapped_column(String(120), index=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(60), default="")  # quem gravou: supervisor, usuario, ferramenta
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AIAuditEvent(Base):
+    """Trilha de auditoria: um registro por passo do supervisor. É o que
+    responde 'por que esse modelo foi escolhido', 'que ferramenta rodou com que
+    argumento' e 'quanto custou' depois que a conversa já acabou."""
+
+    __tablename__ = "ai_audit_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ai_sessions.id"), index=True, nullable=True)
+    step: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String(20), index=True)  # routing | llm_call | tool_call | error
+    provider: Mapped[str] = mapped_column(String(30), default="")
+    model: Mapped[str] = mapped_column(String(80), default="")
+    tool_name: Mapped[str] = mapped_column(String(120), default="")
+    request: Mapped[str] = mapped_column(Text, default="")
+    response: Mapped[str] = mapped_column(Text, default="")
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
