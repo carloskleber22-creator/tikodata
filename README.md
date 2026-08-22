@@ -6,23 +6,31 @@ tipo de anúncio está com mais alcance por categoria de produto) via **Commerci
 Kalodata/FastMoss/EchoTik/PiPiADS, mas **sem raspar dados** (isso não é algo que este projeto
 faz — ver "Por que não é um clone completo" abaixo). Só APIs oficiais.
 
-## Status atual (2026-08-16)
+## Status atual (2026-08-21)
 
-App **Tikodata** já criado no Partner Center (categoria Conectores, mercado Brasil/Vendedores
-locais, redirect URL e escopos `seller.order.info` + `seller.authorization.info` configurados,
-credenciais salvas no `.env`). **Bloqueado esperando o TikTok aprovar a avaliação de segurança e
-privacidade de dados da conta** — sem isso o app não pode ser publicado, e sem publicar a
-autorização falha com "Não disponível na região da sua loja" (confirmado testando). Isso é fila
-de revisão do TikTok, não tem como acelerar. Quando a avaliação sair (verifique em Aplicativos e
-serviços > Tikodata), clique em "Publicar" e teste `https://lvh.me:8000/oauth/login` de novo.
+App **Tikodata** aprovado na avaliação de segurança e privacidade de dados do TikTok Shop e
+**publicado** (Brasil/Vendedores locais, modo "Teste beta" — até 25 usuários autorizados sem
+precisar da avaliação final de funcionalidade). **Primeira loja real conectada com sucesso**
+(`@casainteligente77`, `seller_account_id=2`) via `https://lvh.me:8000/oauth/login` — OAuth,
+assinatura HMAC e sincronização de pedidos (`POST /api/sales/sync/2`) confirmados funcionando
+ponta a ponta. A loja ainda não tem pedidos reais (`total_count: 0` na API), então o formato de
+`line_items` continua não confirmado — mas o mecanismo de sincronização em si está validado.
+
+**Pesquisa de Mercado bloqueada por escopo, não mais por revisão pendente**: os dois endpoints
+da Affiliate Seller API (`marketplace_creators/search` e `open_collaborations/products/search`)
+retornam `105005: Access denied — the access scopes granted for the app or the access token do
+not contain the required access scope`, testado diretamente com o token real. O app no Partner
+Center só tem `seller.order.info` + `seller.authorization.info` habilitados em "Gerenciar API" —
+falta adicionar o escopo de Creator Marketplace (`seller.creator_marketplace.read`, mencionado no
+guia oficial) e reautorizar a loja depois de habilitá-lo.
 
 ## Escopo
 
 | Área | O que faz | Status |
 |---|---|---|
-| Dashboard de Vendas | Receita e unidades vendidas da própria loja (pedidos reais via OAuth) | Implementado |
+| Dashboard de Vendas | Receita e unidades vendidas da própria loja (pedidos reais via OAuth) | **Funcionando de ponta a ponta com loja real** — sem pedidos reais ainda pra validar `line_items` |
 | Inspiração de Criativos | Busca por categoria de produto na Ad Library oficial do TikTok — peça criativa, período e alcance, ordenado do maior alcance pro menor | Implementado — **só cobre Europa** |
-| Pesquisa de Mercado | Criadores e produtos de **qualquer loja** via Affiliate Seller API — GMV, seguidores, unidades vendidas, comissão | Implementado — **nunca testado com OAuth real, bloqueado esperando a mesma revisão do TikTok Shop** |
+| Pesquisa de Mercado | Criadores e produtos de **qualquer loja** via Affiliate Seller API — GMV, seguidores, unidades vendidas, comissão | Implementado — **bloqueado por escopo faltando no Partner Center (`105005`), não pela revisão** — ver "Status atual" |
 | Vendas Shopee | Receita e unidades vendidas da própria loja Shopee (pedidos reais via OAuth) | Implementado — **bloqueado esperando aprovação da candidatura ISV na Shopee, sem `partner_id`/`partner_key` reais ainda** |
 
 ## Front-end
@@ -130,6 +138,17 @@ Streamlit) — Python porque esta máquina não tem Node.js instalado.
   vier no formato esperado (ou não vier), a receita do pedido (`payment.total_amount`, esse sim
   confirmado na doc) ainda é capturada como uma linha sintética, só sem o nome do produto
   correto. **Teste com uma conta real e ajuste `sales_dashboard.py` se o formato vier diferente.**
+  Ainda não foi possível confirmar isso — a primeira loja real conectada (`@casainteligente77`,
+  2026-08-21) tem `total_count: 0` pedidos.
+- **Escopos habilitados em "Gerenciar API" precisam bater com os endpoints que o app chama, e a
+  falta de um gera erro só em runtime, não no cadastro** — confirmado em 2026-08-21: com só
+  `seller.order.info` + `seller.authorization.info` habilitados, `orders/search` funciona
+  normal, mas os dois endpoints da Affiliate Seller API (`marketplace_creators/search` e
+  `open_collaborations/products/search`) retornam `105005: Access denied — the access scopes
+  granted for the app or the access token do not contain the required access scope`. Não há
+  aviso no cadastro do app nem na tela de autorização — só descobre tentando a chamada. Corrigir
+  adicionando o escopo de Creator Marketplace em "Gerenciar API" no Partner Center e
+  reautorizando a loja.
 
 ### Commercial Content API (Ad Library) — descobertas
 
@@ -207,9 +226,8 @@ cp .env.example .env
 2. ~~Registre um app~~ — feito (app "Tikodata", ID de serviço `7673833015814293255`). Redirect
    URL `https://lvh.me:8000/oauth/callback` e escopos `seller.order.info` +
    `seller.authorization.info` já habilitados em Gerenciar API.
-3. ~~Preencha `TT_APP_KEY`, `TT_APP_SECRET` e `TT_SERVICE_ID` no `.env`~~ — feito.
-   **Falta:** publicar o app (bloqueado pela avaliação de segurança/privacidade — ver "Status
-   atual" acima) e então testar o login de verdade.
+3. ~~Preencha `TT_APP_KEY`, `TT_APP_SECRET` e `TT_SERVICE_ID` no `.env`~~ — feito. ~~Publicar o
+   app e testar o login de verdade~~ — feito em 2026-08-21, primeira loja real conectada.
 4. Gere o certificado autoassinado (já tem um pronto em `certs/`, gerado com `openssl`;
    regenere se quiser):
    ```bash
@@ -262,20 +280,17 @@ Independente do setup do TikTok Shop acima — outro portal, outro par de creden
 
 ## Limitações conhecidas / próximos passos
 
-- **Bloqueado por revisão do TikTok** — ver "Status atual" no topo. O fluxo OAuth foi construído
-  a partir da documentação oficial e o `/oauth/login` já redireciona corretamente para o domínio
-  certo com o `service_id` real, mas o teste ponta a ponta (autorizar de verdade e sincronizar
-  pedidos) ainda não foi possível por causa do bloqueio de publicação.
-- Formato de `line_items` não confirmado — ver descoberta acima.
+- **Dashboard de Vendas: OAuth e sincronização confirmados funcionando com loja real
+  (`@casainteligente77`) em 2026-08-21** — falta só a loja ter pedidos de verdade pra validar o
+  formato de `line_items` (ver descoberta acima).
 - **Inspiração de Criativos: aprovado e testado com credenciais reais em 2026-08-16, mas a
   query (`/v2/research/adlib/ad/query/`) devolve `500 internal_error` consistente** — ver
   descoberta acima ("Aprovado em 2026-08-16..."). Provável atraso de propagação do lado do
   TikTok; tentar de novo mais tarde.
-- **Pesquisa de Mercado (`marketplace_intel.py`, `3_Pesquisa de Mercado.py`) nunca testada com
-  OAuth real** — escrita em 2026-08-16 a partir da doc oficial confirmada (request/response de
-  exemplo completos pros dois endpoints), mas depende do mesmo `shop_cipher`/`access_token` de
-  loja conectada que está bloqueado pela revisão de segurança/privacidade do TikTok Shop (ver
-  "Status atual"). Testar assim que a revisão liberar e o OAuth funcionar de ponta a ponta.
+- **Pesquisa de Mercado bloqueada por escopo faltando, confirmado em 2026-08-21** —
+  `marketplace_creators/search` e `open_collaborations/products/search` retornam `105005:
+  Access denied` com a loja real conectada. Precisa adicionar o escopo de Creator Marketplace em
+  "Gerenciar API" no Partner Center e reautorizar a loja — ver descoberta acima.
 - Sem testes automatizados — só verificação manual (servidor sobe limpo, páginas renderizam,
   estado vazio tratado sem erro).
 - SQLite é suficiente para uso pessoal; migre para Postgres antes de qualquer uso multiusuário.
