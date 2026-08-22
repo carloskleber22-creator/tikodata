@@ -16,13 +16,16 @@ assinatura HMAC e sincronização de pedidos (`POST /api/sales/sync/2`) confirma
 ponta a ponta. A loja ainda não tem pedidos reais (`total_count: 0` na API), então o formato de
 `line_items` continua não confirmado — mas o mecanismo de sincronização em si está validado.
 
-**Pesquisa de Mercado bloqueada por escopo, não mais por revisão pendente**: os dois endpoints
-da Affiliate Seller API (`marketplace_creators/search` e `open_collaborations/products/search`)
-retornam `105005: Access denied — the access scopes granted for the app or the access token do
-not contain the required access scope`, testado diretamente com o token real. O app no Partner
-Center só tem `seller.order.info` + `seller.authorization.info` habilitados em "Gerenciar API" —
-falta adicionar o escopo de Creator Marketplace (`seller.creator_marketplace.read`, mencionado no
-guia oficial) e reautorizar a loja depois de habilitá-lo.
+**Pesquisa de Mercado indisponível para o mercado Brasil — não é um escopo esquecido, é o
+programa de afiliados que ainda não existe aqui.** Os dois endpoints da Affiliate Seller API
+retornam `105005: Access denied`, testado com o token real. Investigando, o painel "Gerenciar
+API" do app não lista **nenhum** pacote de Creator Marketplace/Affiliate pra escolher (busquei
+por "creator", "affiliate" e "market", zero resultados) — confirmando que não é um checkbox
+faltando. A doc oficial da Affiliate Seller API explica o motivo: **TikTok Shop Creator
+Affiliates precisam estar registrados nos EUA, Reino Unido ou Sudeste Asiático** — o Brasil não
+está nessa lista, então o programa de afiliados (e a API que o suporta) simplesmente não
+operam aqui ainda. Corrige uma suposição anterior deste README (achávamos que só faltava marcar
+o escopo).
 
 ## Escopo
 
@@ -30,7 +33,7 @@ guia oficial) e reautorizar a loja depois de habilitá-lo.
 |---|---|---|
 | Dashboard de Vendas | Receita e unidades vendidas da própria loja (pedidos reais via OAuth) | **Funcionando de ponta a ponta com loja real** — sem pedidos reais ainda pra validar `line_items` |
 | Inspiração de Criativos | Busca por categoria de produto na Ad Library oficial do TikTok — peça criativa, período e alcance, ordenado do maior alcance pro menor | Implementado — **só cobre Europa** |
-| Pesquisa de Mercado | Criadores e produtos de **qualquer loja** via Affiliate Seller API — GMV, seguidores, unidades vendidas, comissão | Implementado — **bloqueado por escopo faltando no Partner Center (`105005`), não pela revisão** — ver "Status atual" |
+| Pesquisa de Mercado | Criadores e produtos de **qualquer loja** via Affiliate Seller API — GMV, seguidores, unidades vendidas, comissão | Implementado — **indisponível para o mercado Brasil** (programa de Creator Affiliates só existe em EUA/Reino Unido/SEA) — ver "Status atual" |
 | Vendas Shopee | Receita e unidades vendidas da própria loja Shopee (pedidos reais via OAuth) | Implementado — **bloqueado esperando aprovação da candidatura ISV na Shopee, sem `partner_id`/`partner_key` reais ainda** |
 
 ## Front-end
@@ -122,16 +125,20 @@ Streamlit) — Python porque esta máquina não tem Node.js instalado.
 - **Domínio de autorização depende do mercado**: usamos `services.tiktokshop.com` (ROW/resto
   do mundo — inclui Brasil). Se seu app for registrado como US, troque `TT_US_MARKET=true` no
   `.env` para usar `services.us.tiktokshop.com`.
-- **A Affiliate Seller API tem busca de mercado de verdade, não só dados da própria loja** —
-  descoberta em 2026-08-16, corrige uma suposição anterior deste README. Dois endpoints:
-  `POST /affiliate_seller/202508/marketplace_creators/search` (escopo
-  `seller.creator_marketplace.read`, filtra por GMV, unidades vendidas, seguidores, categoria —
-  cobre qualquer criador do Creator Marketplace) e
+- **A Affiliate Seller API tem busca de mercado de verdade, não só dados da própria loja — mas só
+  em EUA, Reino Unido e Sudeste Asiático, não no Brasil.** Descoberta em 2026-08-16 (existência
+  dos endpoints) e corrigida em 2026-08-21 (disponibilidade real por mercado). Dois endpoints:
+  `POST /affiliate_seller/202508/marketplace_creators/search` (filtra por GMV, unidades vendidas,
+  seguidores, categoria — cobre qualquer criador do Creator Marketplace) e
   `POST /affiliate_seller/202405/open_collaborations/products/search` (filtra por palavra-chave,
   categoria, preço, comissão — cobre produtos de **qualquer loja** aberta a colaboração de
-  afiliados, com `shop.name` no retorno). Ambos ainda exigem `shop_cipher` + `access_token` da
-  própria loja conectada — não são endpoints anônimos — mas não têm exigência de faturamento/GMV
-  pra liberar acesso, diferente do Developer Partner Program do Mercado Livre.
+  afiliados, com `shop.name` no retorno). Ambos exigiriam `shop_cipher` + `access_token` da
+  própria loja conectada — não são endpoints anônimos. A doc oficial da Affiliate Seller API
+  (`partner.tiktokshop.com/docv2/page/6697960798b0a502f89e3d00`) explica: para ser um "TikTok
+  Shop Creator Affiliate" (pré-requisito de todo o ecossistema de afiliados), o criador precisa
+  estar registrado nos **EUA, Reino Unido ou Sudeste Asiático** — o Brasil não está nessa lista,
+  então o programa não opera aqui ainda, o que explica por que nenhum escopo relacionado aparece
+  disponível pra um app de mercado Brasil (ver descoberta abaixo).
 - **Formato exato dos itens do pedido (`line_items`) não foi confirmado**: o exemplo de
   resposta na doc oficial do "Get Order List" está truncado antes de chegar nos produtos do
   pedido. `sales_dashboard.sync_orders` foi escrito de forma defensiva — se `line_items` não
@@ -140,15 +147,16 @@ Streamlit) — Python porque esta máquina não tem Node.js instalado.
   correto. **Teste com uma conta real e ajuste `sales_dashboard.py` se o formato vier diferente.**
   Ainda não foi possível confirmar isso — a primeira loja real conectada (`@casainteligente77`,
   2026-08-21) tem `total_count: 0` pedidos.
-- **Escopos habilitados em "Gerenciar API" precisam bater com os endpoints que o app chama, e a
-  falta de um gera erro só em runtime, não no cadastro** — confirmado em 2026-08-21: com só
-  `seller.order.info` + `seller.authorization.info` habilitados, `orders/search` funciona
-  normal, mas os dois endpoints da Affiliate Seller API (`marketplace_creators/search` e
-  `open_collaborations/products/search`) retornam `105005: Access denied — the access scopes
-  granted for the app or the access token do not contain the required access scope`. Não há
-  aviso no cadastro do app nem na tela de autorização — só descobre tentando a chamada. Corrigir
-  adicionando o escopo de Creator Marketplace em "Gerenciar API" no Partner Center e
-  reautorizando a loja.
+- **Um endpoint pode estar 100% documentado e ainda não existir de fato pro seu mercado** —
+  confirmado em 2026-08-21: com `seller.order.info` + `seller.authorization.info` habilitados,
+  `orders/search` funciona normal, mas os dois endpoints da Affiliate Seller API retornam
+  `105005: Access denied — the access scopes granted for the app or the access token do not
+  contain the required access scope`. A causa não é um escopo desmarcado: o painel "Gerenciar
+  API" do app (mercado Brasil) não lista **nenhum** pacote de Creator Marketplace/Affiliate pra
+  escolher — busca por "creator", "affiliate" e "market" no painel dá zero resultado. Ou seja,
+  não existe um botão pra apertar aqui; é uma limitação de mercado (ver descoberta acima). Não há
+  aviso disso nem no cadastro do app nem na tela de autorização — só descobre tentando a chamada
+  e depois cruzando com a doc de disponibilidade regional.
 
 ### Commercial Content API (Ad Library) — descobertas
 
@@ -287,10 +295,11 @@ Independente do setup do TikTok Shop acima — outro portal, outro par de creden
   query (`/v2/research/adlib/ad/query/`) devolve `500 internal_error` consistente** — ver
   descoberta acima ("Aprovado em 2026-08-16..."). Provável atraso de propagação do lado do
   TikTok; tentar de novo mais tarde.
-- **Pesquisa de Mercado bloqueada por escopo faltando, confirmado em 2026-08-21** —
-  `marketplace_creators/search` e `open_collaborations/products/search` retornam `105005:
-  Access denied` com a loja real conectada. Precisa adicionar o escopo de Creator Marketplace em
-  "Gerenciar API" no Partner Center e reautorizar a loja — ver descoberta acima.
+- **Pesquisa de Mercado indisponível para o mercado Brasil, confirmado em 2026-08-21** — não é
+  um escopo pra habilitar (não existe essa opção no painel do app), é o programa de Creator
+  Affiliates do TikTok Shop que só opera em EUA/Reino Unido/SEA hoje. Sem alternativa enquanto o
+  Brasil não entrar na lista de mercados suportados — ver descoberta acima. A funcionalidade fica
+  implementada e pronta pro dia em que a TikTok expandir o programa pra cá.
 - Sem testes automatizados — só verificação manual (servidor sobe limpo, páginas renderizam,
   estado vazio tratado sem erro).
 - SQLite é suficiente para uso pessoal; migre para Postgres antes de qualquer uso multiusuário.

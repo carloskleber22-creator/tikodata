@@ -54,9 +54,7 @@ status_lines = [
     else "⏳ Aguardando loja real (bloqueado pela revisão de segurança/privacidade do TikTok Shop)",
     ("⚠️ Credenciais configuradas, mas a API tem retornado erro instável (500) do lado do TikTok"
      if adlib_configured else "⏳ Configure `ADLIB_CLIENT_KEY`/`ADLIB_CLIENT_SECRET` no `.env`"),
-    ("⚠️ Loja real conectada, mas a API nega acesso (105005) — falta habilitar o escopo de "
-     "Creator Marketplace em Gerenciar API no Partner Center"
-     if has_real_seller else "⏳ Aguardando a mesma loja real conectar (mesmo bloqueio do Dashboard de Vendas)"),
+    "🚫 Indisponível para o mercado Brasil — programa de Creator Affiliates do TikTok Shop só existe em EUA/Reino Unido/SEA hoje",
     ("✅ Loja real conectada" if has_real_shopee
      else "⏳ Aguardando aprovação da candidatura ISV na Shopee" if not shopee_configured
      else "⏳ Aguardando loja real conectar"),
