@@ -11,7 +11,7 @@ from app.db import SessionLocal, init_db
 from app.models import SellerAccount, ShopeeAccount
 from app.services import sales_dashboard, shopee_sales
 from dashboard._theme import format_compact, inject_base_css, kalo_row, require_demo_login, stat_tile
-from scripts.seed_demo_data import seed_demo_data
+from scripts.seed_demo_data import seed_demo_data, seed_shopee_demo_data
 
 PAGES = {
     "pages/1_Dashboard de Vendas.py": ("💰", "Dashboard de Vendas (TikTok)", "Receita e unidades da sua loja"),
@@ -140,4 +140,5 @@ with col2:
     st.markdown("**Testar com dados de exemplo**")
     if st.button("🧪 Popular com dados de exemplo", key="seed_bottom"):
         st.success(seed_demo_data())
+        st.success(seed_shopee_demo_data())
         st.rerun()
