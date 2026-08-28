@@ -19,6 +19,7 @@ from dashboard._theme import (
     stat_tile,
     style_layout,
 )
+from scripts.seed_demo_data import seed_demo_data
 
 st.set_page_config(page_title="Dashboard de Vendas", page_icon="💰", layout="wide")
 init_db()
@@ -35,9 +36,11 @@ if not sellers:
     st.warning(
         "Nenhuma loja conectada. Rode a API (`uvicorn app.api:app --reload --ssl-keyfile "
         "certs/localhost-key.pem --ssl-certfile certs/localhost.pem`) e acesse "
-        "https://lvh.me:8000/oauth/login para conectar sua loja do TikTok Shop, ou gere dados "
-        "de exemplo com `python3 scripts/seed_demo_data.py`."
+        "https://lvh.me:8000/oauth/login para conectar sua loja do TikTok Shop."
     )
+    if st.button("🧪 Popular com dados de exemplo"):
+        st.success(seed_demo_data())
+        st.rerun()
     st.stop()
 
 col_a, col_b = st.columns([3, 2])
