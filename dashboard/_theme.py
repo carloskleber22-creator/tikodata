@@ -185,6 +185,44 @@ def require_demo_login():
     st.stop()
 
 
+def import_real_seller_once():
+    """Insere a loja real do TikTok Shop no banco (efêmero) do deploy público,
+    usando as credenciais salvas em TT_REAL_* nos Secrets do Streamlit Cloud —
+    sem isso, a única forma de autorizar seria via `/oauth/login` do backend
+    FastAPI, que só roda localmente (não é servido publicamente). O
+    access_token/refresh_token continuam sendo renovados normalmente pelo
+    próprio Streamlit via `sales_dashboard.ensure_fresh_token`, então isso
+    precisa rodar só uma vez por boot do container (idempotente: não faz nada
+    se TT_REAL_OPEN_ID já estiver no banco ou se os secrets não existirem)."""
+    if not settings.tt_real_open_id or not settings.tt_real_access_token:
+        return
+
+    from datetime import datetime
+
+    from app.db import SessionLocal
+    from app.models import SellerAccount
+
+    with SessionLocal() as db:
+        existing = db.query(SellerAccount).filter(SellerAccount.open_id == settings.tt_real_open_id).one_or_none()
+        if existing:
+            return
+        db.add(
+            SellerAccount(
+                open_id=settings.tt_real_open_id,
+                seller_name=settings.tt_real_seller_name,
+                seller_base_region=settings.tt_real_seller_region,
+                shop_id=settings.tt_real_shop_id,
+                shop_cipher=settings.tt_real_shop_cipher,
+                shop_name=settings.tt_real_shop_name,
+                access_token=settings.tt_real_access_token,
+                refresh_token=settings.tt_real_refresh_token,
+                access_token_expires_at=datetime.fromisoformat(settings.tt_real_access_token_expires_at),
+                refresh_token_expires_at=datetime.fromisoformat(settings.tt_real_refresh_token_expires_at),
+            )
+        )
+        db.commit()
+
+
 def sparkline_svg(values, width: int = 96, height: int = 28) -> str:
     """12-pontos (ou menos) em tom recessivo, com o ponto mais recente em destaque na cor de acento."""
     if not values or len(values) < 2 or max(values) == 0:

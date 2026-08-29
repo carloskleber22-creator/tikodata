@@ -13,6 +13,7 @@ from app.services import sales_dashboard
 from dashboard._theme import (
     SEQUENTIAL_BLUE,
     format_compact,
+    import_real_seller_once,
     inject_base_css,
     kalo_row,
     require_demo_login,
@@ -25,6 +26,7 @@ st.set_page_config(page_title="Dashboard de Vendas", page_icon="💰", layout="w
 init_db()
 inject_base_css()
 require_demo_login()
+import_real_seller_once()
 
 st.title("💰 Dashboard de Vendas")
 st.caption("Receita e unidades vendidas da sua própria loja no TikTok Shop (requer conexão OAuth).")
